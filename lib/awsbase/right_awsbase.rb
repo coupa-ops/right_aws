@@ -350,7 +350,7 @@ module RightAws
         default_port       = uri.default_port
       else
         @params[:server]   ||= service_info[:default_host]
-        @params[:server]     = "#{@params[:region]}.#{@params[:server]}" if @params[:region]
+        @params[:server]     = "#{service_info[:name]}.#{@params[:region]}.amazonaws.com" if @params[:region]
         @params[:port]     ||= service_info[:default_port]
         @params[:service]  ||= service_info[:default_service]
         @params[:protocol] ||= service_info[:default_protocol]
