@@ -122,6 +122,56 @@ module RightAws
       "#{canonical_string}&Signature=#{signature}"
     end
 
+    def self.signature_key_v4(key, date, region, service_name)
+      kdate = OpenSSL::HMAC.digest('sha256', "AWS4#{key}", date.strftime('%Y%m%d'))
+      kregion  = OpenSSL::HMAC.digest('sha256', kdate, region)
+      kservice = OpenSSL::HMAC.digest('sha256', kregion, service_name)
+      ksigning = OpenSSL::HMAC.digest('sha256', kservice, 'aws4_request')
+    end
+
+    # Signature Version 4
+    def self.sign_request_v4(aws_access_key_id, aws_secret_access_key, service_hash, http_verb,
+                             host, uri, region, service_name, timeout, date=nil)
+      time_now = date || Time.now.utc
+      credential_scope = "#{time_now.strftime('%Y%m%d')}/" \
+                         "#{region}/#{service_name}/aws4_request"
+
+      headers = {
+        'Host' => host,
+        'X-Amz-Date' => time_now.strftime('%Y%m%dT%H%M%SZ')
+      }
+
+      signed_headers = headers.keys.map(&:downcase).sort.join(';')
+
+      canonical_query_string = service_hash.keys.sort.map do |key|
+        "#{amz_escape(key)}=#{amz_escape(service_hash[key])}"
+      end.join('&')
+
+      canonical_headers = headers.keys.sort.map do |key|
+        "#{key.downcase}:#{headers[key].strip.gsub(/ +/, ' ')}"
+      end.join("\n") + "\n"
+
+      hashed_payload = OpenSSL::Digest.hexdigest('sha256', '')
+
+      canonical_request = "#{http_verb}\n#{uri}\n#{canonical_query_string}\n" \
+                          "#{canonical_headers}\n#{signed_headers}\n#{hashed_payload}"
+
+      string_to_sign = "AWS4-HMAC-SHA256\n#{headers['X-Amz-Date']}\n#{credential_scope}\n" + \
+                       OpenSSL::Digest.hexdigest('sha256', canonical_request)
+
+      signature = \
+        OpenSSL::HMAC.hexdigest('sha256',
+                                signature_key_v4(aws_secret_access_key, time_now,
+                                                 region, service_name),
+                                string_to_sign)
+
+      headers.merge!(
+        'Authorization' => "AWS4-HMAC-SHA256 Credential=#{aws_access_key_id}/#{credential_scope}," \
+                           " SignedHeaders=#{signed_headers}, Signature=#{signature}"
+      )
+      [canonical_query_string, headers]
+    end
+
     # From Amazon's SQS Dev Guide, a brief description of how to escape:
     # "URL encode the computed signature and other query parameters as specified in 
     # RFC1738, section 2.2. In addition, because the + character is interpreted as a blank space 
@@ -245,7 +295,7 @@ module RightAws
   end
 
   module RightAwsBaseInterface
-    DEFAULT_SIGNATURE_VERSION = '2'
+    DEFAULT_SIGNATURE_VERSION = '4'
     
     @@caching = false
     def self.caching
@@ -316,6 +366,7 @@ module RightAws
       @params[:max_connections] ||= 10
       @params[:connection_lifetime] ||= 20*60
       @params[:api_version]  ||= service_info[:default_api_version]
+      @params[:service_name] ||= service_info[:name].downcase
       @logger = @params[:logger]
       @logger = ::Rails.logger       if !@logger && defined?(::Rails) && ::Rails.respond_to?(:logger)
       @logger = RAILS_DEFAULT_LOGGER if !@logger && defined?(RAILS_DEFAULT_LOGGER)
@@ -331,6 +382,9 @@ module RightAws
       when '0' then AwsUtils::sign_request_v0(aws_secret_access_key, service_hash)
       when '1' then AwsUtils::sign_request_v1(aws_secret_access_key, service_hash)
       when '2' then AwsUtils::sign_request_v2(aws_secret_access_key, service_hash, http_verb, host, service)
+      when '4' then AwsUtils::sign_request_v4(@aws_access_key_id, aws_secret_access_key,
+                                              service_hash, http_verb, host, service,
+                                              @params[:region], @params[:service_name], @params[:connection_lifetime])
       else raise AwsError.new("Unknown signature version (#{signature_version.to_s}) requested")
       end
     end
@@ -450,10 +504,10 @@ module RightAws
       service_hash.merge!(options)
       service_hash["SecurityToken"] = @params[:token] if @params[:token]
       # Sign request options
-      service_params = signed_service_params(@aws_secret_access_key, service_hash, http_verb, @params[:host_to_sign], @params[:service])
+      service_params, headers = signed_service_params(@aws_secret_access_key, service_hash, http_verb, @params[:host_to_sign], @params[:service])
       # Use POST if the length of the query string is too large
       # see http://docs.amazonwebservices.com/AmazonSimpleDB/2007-11-07/DeveloperGuide/MakingRESTRequests.html
-      if http_verb != 'POST' && service_params.size > 2000
+      if http_verb != 'POST' && service_params.size > 2000 && signature_version <= '2'
         http_verb = 'POST'
         if signature_version == '2'
           service_params = signed_service_params(@aws_secret_access_key, service_hash, http_verb, @params[:host_to_sign], @params[:service])
@@ -462,7 +516,7 @@ module RightAws
       # create a request
       case http_verb
       when 'GET'
-        request = Net::HTTP::Get.new("#{@params[:service]}?#{service_params}")
+        request = Net::HTTP::Get.new("#{@params[:service]}?#{service_params}", headers)
       when 'POST'
         request      = Net::HTTP::Post.new(@params[:service])
         request.body = service_params
