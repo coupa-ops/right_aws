@@ -1217,8 +1217,8 @@ module RightAws
     def initialize(right_aws_parser) 
       @right_aws_parser = right_aws_parser 
     end 
-    def on_characters(chars)
-      @right_aws_parser.text(chars) 
+    def on_characters(chars) 
+      @right_aws_parser.text(chars)
     end 
     def on_start_document; end 
     def on_comment(msg); end 
