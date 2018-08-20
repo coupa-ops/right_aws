@@ -513,17 +513,31 @@ module RightAws
           service_params = signed_service_params(@aws_secret_access_key, service_hash, http_verb, @params[:host_to_sign], @params[:service])
         end
       end
-      # create a request
-      case http_verb
-      when 'GET'
-        request = Net::HTTP::Get.new("#{@params[:service]}?#{service_params}", headers)
-      when 'POST'
-        request      = Net::HTTP::Post.new(@params[:service])
-        request.body = service_params
-        request['Content-Type'] = 'application/x-www-form-urlencoded; charset=utf-8'
-      else
-        raise "Unsupported HTTP verb #{verb.inspect}!"
+      # CO-7031 : AWS API RequestLimitExceeded
+      # Adding retry logic for avoiding RequestLimitExceeded exception and chef-cllient failures
+      retry_count = 0
+      begin
+        # create a request
+        case http_verb
+        when 'GET'
+          request = Net::HTTP::Get.new("#{@params[:service]}?#{service_params}", headers)
+        when 'POST'
+          request      = Net::HTTP::Post.new(@params[:service])
+          request.body = service_params
+          request['Content-Type'] = 'application/x-www-form-urlencoded; charset=utf-8'
+        else
+          raise "Unsupported HTTP verb #{verb.inspect}!"
+        end
+      rescue RightAws::AwsError => e
+        ratelimit_exception = e.message.match(/RequestLimitExceeded/) ? true : false
+        # before raising execption make sure currenct exception is not relateted to Ratelimiting and 
+        # also you are not exceeding limit if current exception if related to Ratelimiting
+        raise e.message if ( !ratelimit_exception || retry_count >= 5 )
+        retry_count += 1
+        sleep retry_count * 3
+        retry
       end
+
       # prepare output hash
       request_hash = { :request  => request,
                        :server   => @params[:server],
@@ -1203,8 +1217,8 @@ module RightAws
     def initialize(right_aws_parser) 
       @right_aws_parser = right_aws_parser 
     end 
-    def on_characters(chars) 
-      @right_aws_parser.text(chars)
+    def on_characters(chars)
+      @right_aws_parser.text(chars) 
     end 
     def on_start_document; end 
     def on_comment(msg); end 
