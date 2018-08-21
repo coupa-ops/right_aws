@@ -513,7 +513,6 @@ module RightAws
           service_params = signed_service_params(@aws_secret_access_key, service_hash, http_verb, @params[:host_to_sign], @params[:service])
         end
       end
-
       # create a request
       case http_verb
       when 'GET'
@@ -525,7 +524,6 @@ module RightAws
       else
         raise "Unsupported HTTP verb #{verb.inspect}!"
       end
-
       # prepare output hash
       request_hash = { :request  => request,
                        :server   => @params[:server],
