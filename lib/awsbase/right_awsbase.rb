@@ -513,29 +513,17 @@ module RightAws
           service_params = signed_service_params(@aws_secret_access_key, service_hash, http_verb, @params[:host_to_sign], @params[:service])
         end
       end
-      # CO-7031 : AWS API RequestLimitExceeded
-      # Adding retry logic for avoiding RequestLimitExceeded exception and chef-cllient failures
-      retry_count = 0
-      begin
-        # create a request
-        case http_verb
-        when 'GET'
-          request = Net::HTTP::Get.new("#{@params[:service]}?#{service_params}", headers)
-        when 'POST'
-          request      = Net::HTTP::Post.new(@params[:service])
-          request.body = service_params
-          request['Content-Type'] = 'application/x-www-form-urlencoded; charset=utf-8'
-        else
-          raise "Unsupported HTTP verb #{verb.inspect}!"
-        end
-      rescue RightAws::AwsError => e
-        ratelimit_exception = e.message.match(/RequestLimitExceeded/) ? true : false
-        # before raising execption make sure currenct exception is not relateted to Ratelimiting and 
-        # also you are not exceeding limit if current exception if related to Ratelimiting
-        raise e.message if ( !ratelimit_exception || retry_count >= 5 )
-        retry_count += 1
-        sleep retry_count * 3
-        retry
+
+      # create a request
+      case http_verb
+      when 'GET'
+        request = Net::HTTP::Get.new("#{@params[:service]}?#{service_params}", headers)
+      when 'POST'
+        request      = Net::HTTP::Post.new(@params[:service])
+        request.body = service_params
+        request['Content-Type'] = 'application/x-www-form-urlencoded; charset=utf-8'
+      else
+        raise "Unsupported HTTP verb #{verb.inspect}!"
       end
 
       # prepare output hash
@@ -563,6 +551,7 @@ module RightAws
       @last_response = nil
       response = nil
       blockexception = nil
+      retry_count = 0
 
       if(block != nil)
         # TRB 9/17/07 Careful - because we are passing in blocks, we get a situation where
@@ -594,6 +583,17 @@ module RightAws
                 blockexception = e
               end
             end
+          rescue RightAws::AwsError => e
+            # CO-7031 : AWS API RequestLimitExceeded
+            # Adding retry logic for avoiding RequestLimitExceeded exception and chef-cllient failures
+            # before raising execption make sure currenct exception is not relateted to Ratelimiting and
+            # also you are not exceeding limit if current exception if related to Ratelimiting
+            ratelimit_exception = e.message.match(/RequestLimitExceeded|RateExceeded/) ? true : false
+            raise e.message if ( !ratelimit_exception || retry_count >= 5 )
+            puts "Retrying AWS API call because of Rate Limit Exceeded"
+            retry_count += 1
+            sleep retry_count * 3
+            retry
           rescue Exception => e
             # Kill a connection if we run into a low level connection error
             destroy_connection(request, "error: #{e.message}")
@@ -613,27 +613,40 @@ module RightAws
       else
         benchblock.service.add! do
           begin
-            response = @connection.request(request)
+            responsehdr = @connection.request(request) do |response|
+              @last_response = response
+              if response.is_a?(Net::HTTPSuccess)
+                @error_handler = nil
+                response
+              else
+                @error_handler = AWSErrorHandler.new(self, parser, :errors_list => self.class.amazon_problems) unless @error_handler
+                check_result   = @error_handler.check(request)
+                if check_result
+                  @error_handler = nil
+                  check_result
+                end
+                raise AwsError.new(@last_errors, @last_response.code, @last_request_id)
+              end
+            end
+          rescue RightAws::AwsError => e
+            # CO-7031 : AWS API RequestLimitExceeded
+            # Adding retry logic for avoiding RequestLimitExceeded exception and chef-cllient failures
+            # before raising execption make sure currenct exception is not relateted to Ratelimiting and
+            # also you are not exceeding limit if current exception if related to Ratelimiting
+            ratelimit_exception = e.message.match(/RequestLimitExceeded|RateExceeded/) ? true : false
+            raise e.message if ( !ratelimit_exception || retry_count >= 5 )
+            puts "Retrying AWS API call because of Rate Limit Exceeded"
+            retry_count += 1
+            sleep retry_count * 3
+            retry
           rescue Exception => e
             # Kill a connection if we run into a low level connection error
             destroy_connection(request, "error: #{e.message}")
             raise e
           end
-        end
-          # check response for errors...
-        @last_response = response
-        if response.is_a?(Net::HTTPSuccess)
-          @error_handler = nil
-          benchblock.xml.add! { parser.parse(response) }
+
+          benchblock.xml.add! { parser.parse(responsehdr) }
           return parser.result
-        else
-          @error_handler = AWSErrorHandler.new(self, parser, :errors_list => self.class.amazon_problems) unless @error_handler
-          check_result   = @error_handler.check(request)
-          if check_result
-            @error_handler = nil
-            return check_result 
-          end
-          raise AwsError.new(@last_errors, @last_response.code, @last_request_id)
         end
       end
     rescue
