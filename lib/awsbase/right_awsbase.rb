@@ -586,8 +586,8 @@ module RightAws
             # Adding retry logic for avoiding RequestLimitExceeded exception and chef-cllient failures
             # before raising execption make sure currenct exception is not relateted to Ratelimiting and
             # also you are not exceeding limit if current exception if related to Ratelimiting
-            ratelimit_exception = e.message.match(/RequestLimitExceeded|RateExceeded/) ? true : false
-            raise e.message if ( !ratelimit_exception || retry_count >= 5 )
+            ratelimit_exception = e.include?(/RequestLimitExceeded/)
+            raise if ( !ratelimit_exception || retry_count >= 5 )
             puts "Retrying AWS API call because of Rate Limit Exceeded"
             retry_count += 1
             sleep retry_count * 3
@@ -631,8 +631,8 @@ module RightAws
             # Adding retry logic for avoiding RequestLimitExceeded exception and chef-cllient failures
             # before raising execption make sure currenct exception is not relateted to Ratelimiting and
             # also you are not exceeding limit if current exception if related to Ratelimiting
-            ratelimit_exception = e.message.match(/RequestLimitExceeded|RateExceeded/) ? true : false
-            raise e.message if ( !ratelimit_exception || retry_count >= 5 )
+            ratelimit_exception = e.include?(/RequestLimitExceeded/)
+            raise if ( !ratelimit_exception || retry_count >= 5 )
             puts "Retrying AWS API call because of Rate Limit Exceeded"
             retry_count += 1
             sleep retry_count * 3
