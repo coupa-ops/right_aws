@@ -252,7 +252,8 @@ module RightAws
                         'ServiceUnavailable', #from SQS docs
                         'Unavailable',
                         'This application is not currently available',
-                        'InsufficientInstanceCapacity'
+                        'InsufficientInstanceCapacity',
+                        'RequestLimitExceeded'
                       ]
     @@amazon_problems = AMAZON_PROBLEMS
       # Returns a list of Amazon service responses which are known to be transient problems. 
