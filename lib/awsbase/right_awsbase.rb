@@ -252,7 +252,8 @@ module RightAws
                         'ServiceUnavailable', #from SQS docs
                         'Unavailable',
                         'This application is not currently available',
-                        'InsufficientInstanceCapacity'
+                        'InsufficientInstanceCapacity',
+                        'RequestLimitExceeded'
                       ]
     @@amazon_problems = AMAZON_PROBLEMS
       # Returns a list of Amazon service responses which are known to be transient problems. 
@@ -549,7 +550,6 @@ module RightAws
       @last_response = nil
       response = nil
       blockexception = nil
-      retry_count = 0
 
       if(block != nil)
         # TRB 9/17/07 Careful - because we are passing in blocks, we get a situation where
@@ -581,17 +581,6 @@ module RightAws
                 blockexception = e
               end
             end
-          rescue RightAws::AwsError => e
-            # CO-7031 : AWS API RequestLimitExceeded
-            # Adding retry logic for avoiding RequestLimitExceeded exception and chef-cllient failures
-            # before raising execption make sure currenct exception is not relateted to Ratelimiting and
-            # also you are not exceeding limit if current exception if related to Ratelimiting
-            ratelimit_exception = e.include?(/RequestLimitExceeded/)
-            raise if ( !ratelimit_exception || retry_count >= 5 )
-            puts "Retrying AWS API call because of Rate Limit Exceeded"
-            retry_count += 1
-            sleep retry_count * 3
-            retry
           rescue Exception => e
             # Kill a connection if we run into a low level connection error
             destroy_connection(request, "error: #{e.message}")
@@ -611,40 +600,27 @@ module RightAws
       else
         benchblock.service.add! do
           begin
-            responsehdr = @connection.request(request) do |response|
-              @last_response = response
-              if response.is_a?(Net::HTTPSuccess)
-                @error_handler = nil
-                response
-              else
-                @error_handler = AWSErrorHandler.new(self, parser, :errors_list => self.class.amazon_problems) unless @error_handler
-                check_result   = @error_handler.check(request)
-                if check_result
-                  @error_handler = nil
-                  check_result
-                end
-                raise AwsError.new(@last_errors, @last_response.code, @last_request_id)
-              end
-            end
-          rescue RightAws::AwsError => e
-            # CO-7031 : AWS API RequestLimitExceeded
-            # Adding retry logic for avoiding RequestLimitExceeded exception and chef-cllient failures
-            # before raising execption make sure currenct exception is not relateted to Ratelimiting and
-            # also you are not exceeding limit if current exception if related to Ratelimiting
-            ratelimit_exception = e.include?(/RequestLimitExceeded/)
-            raise if ( !ratelimit_exception || retry_count >= 5 )
-            puts "Retrying AWS API call because of Rate Limit Exceeded"
-            retry_count += 1
-            sleep retry_count * 3
-            retry
+            response = @connection.request(request)
           rescue Exception => e
             # Kill a connection if we run into a low level connection error
             destroy_connection(request, "error: #{e.message}")
             raise e
           end
-
-          benchblock.xml.add! { parser.parse(responsehdr) }
+        end
+          # check response for errors...
+        @last_response = response
+        if response.is_a?(Net::HTTPSuccess)
+          @error_handler = nil
+          benchblock.xml.add! { parser.parse(response) }
           return parser.result
+        else
+          @error_handler = AWSErrorHandler.new(self, parser, :errors_list => self.class.amazon_problems) unless @error_handler
+          check_result   = @error_handler.check(request)
+          if check_result
+            @error_handler = nil
+            return check_result 
+          end
+          raise AwsError.new(@last_errors, @last_response.code, @last_request_id)
         end
       end
     rescue
@@ -1054,7 +1030,7 @@ module RightAws
     # 0-100 (%) 
     DEFAULT_CLOSE_ON_4XX_PROBABILITY = 10     
     
-    @@reiteration_start_delay = 0.2
+    @@reiteration_start_delay = 2
     def self.reiteration_start_delay
       @@reiteration_start_delay
     end
@@ -1062,7 +1038,7 @@ module RightAws
       @@reiteration_start_delay = reiteration_start_delay
     end
 
-    @@reiteration_time = 5
+    @@reiteration_time = 30
     def self.reiteration_time
       @@reiteration_time
     end
