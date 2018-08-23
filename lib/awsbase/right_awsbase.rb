@@ -1030,7 +1030,7 @@ module RightAws
     # 0-100 (%) 
     DEFAULT_CLOSE_ON_4XX_PROBABILITY = 10     
     
-    @@reiteration_start_delay = 2
+    @@reiteration_start_delay = 0.2
     def self.reiteration_start_delay
       @@reiteration_start_delay
     end
@@ -1038,7 +1038,7 @@ module RightAws
       @@reiteration_start_delay = reiteration_start_delay
     end
 
-    @@reiteration_time = 30
+    @@reiteration_time = 5
     def self.reiteration_time
       @@reiteration_time
     end
