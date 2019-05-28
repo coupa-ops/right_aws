@@ -1,4 +1,4 @@
-source "http://rubygems.org"
+source "https://rubygems.org"
 
 gem 'right_http_connection', '>= 1.2.5',
   :git => 'git@github.com:rightscale/right_http_connection.git',

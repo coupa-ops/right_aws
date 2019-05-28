@@ -6,7 +6,7 @@ GIT
     right_http_connection (1.4.0)
 
 GEM
-  remote: http://rubygems.org/
+  remote: https://rubygems.org/
   specs:
     libxml-ruby (3.1.0)
     rake (0.8.7)
@@ -22,4 +22,4 @@ DEPENDENCIES
   right_http_connection (>= 1.2.5)!
 
 BUNDLED WITH
-   1.16.1
+   1.17.1
