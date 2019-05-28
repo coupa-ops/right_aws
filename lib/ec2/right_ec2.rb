@@ -140,7 +140,7 @@ module RightAws
              :default_api_version => @@api },
            aws_access_key_id    || ENV['AWS_ACCESS_KEY_ID'] , 
            aws_secret_access_key|| ENV['AWS_SECRET_ACCESS_KEY'],
-           params)
+           params.merge!(:endpoint_url => ENV['EC2_URL']))
       # Eucalyptus supports some yummy features but Amazon does not
       #if @params[:eucalyptus]
       #  @params[:port_based_group_ingress] = true unless @params.has_key?(:port_based_group_ingress)

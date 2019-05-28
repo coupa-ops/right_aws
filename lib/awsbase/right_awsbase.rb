@@ -347,7 +347,6 @@ module RightAws
         @params[:protocol] = uri.scheme
         # make sure the 'service' path is not empty
         @params[:service]  = service_info[:default_service] if @params[:service].right_blank?
-        @params[:region]   = nil
         default_port       = uri.default_port
       else
         @params[:server]   ||= service_info[:default_host]
