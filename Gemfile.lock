@@ -6,17 +6,20 @@ GIT
     right_http_connection (1.4.0)
 
 GEM
-  remote: http://rubygems.org/
+  remote: https://rubygems.org/
   specs:
-    libxml-ruby (0.5.2.0)
+    libxml-ruby (3.1.0)
     rake (0.8.7)
-    rcov (0.8.1.2.0)
+    rcov (1.0.0)
 
 PLATFORMS
   ruby
 
 DEPENDENCIES
-  libxml-ruby (~> 0.5.2)
+  libxml-ruby (~> 3.1.0)
   rake
   rcov
   right_http_connection (>= 1.2.5)!
+
+BUNDLED WITH
+   1.17.1
